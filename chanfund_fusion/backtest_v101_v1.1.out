@@ -1,0 +1,26 @@
+16:28:31 [INFO] ============================================================
+16:28:31 [INFO] ChanFund Fusion v1.0.1 — 全量回测开始
+16:28:31 [INFO]   区间: 2021-01-01 ~ 2026-04-29
+16:28:31 [INFO] ============================================================
+[19880:MainThread](2026-05-03 16:28:32,132) INFO - qlib.Initialization - [config.py:453] - default_conf: client.
+[19880:MainThread](2026-05-03 16:28:32,631) INFO - qlib.Initialization - [__init__.py:82] - qlib successfully initialized based on client settings.
+[19880:MainThread](2026-05-03 16:28:32,631) INFO - qlib.Initialization - [__init__.py:84] - data_path={'__DEFAULT_FREQ': PosixPath('/home/quant/.openclaw/workspace/quant/qlib_data/cn_data')}
+16:28:32 [INFO] Qlib initialized: /home/quant/.openclaw/workspace/quant/qlib_data/cn_data
+16:28:32 [INFO] Loaded 5157 stocks
+16:28:32 [INFO] Total stocks: 5157
+Gym has been unmaintained since 2022 and does not support NumPy 2.0 amongst other critical functionality.
+Please upgrade to Gymnasium, the maintained drop-in replacement of Gym, or contact the authors of your software and request that they upgrade.
+Users of this version of Gym should be able to simply replace 'import gym' with 'import gymnasium as gym' in the vast majority of cases.
+See the migration guide at https://gymnasium.farama.org/introduction/migration_guide/ for additional information.
+16:28:32 [INFO] ChanFund Fusion v1.0.0 initialized
+16:28:32 [INFO] Strategy initialized: ChanFund Fusion v1.0.0
+[19880:MainThread](2026-05-03 16:28:32,704) ERROR - qlib.workflow - [utils.py:41] - An exception has been raised[AttributeError: 'LocalProvider' object has no attribute 'list_trade_dates'].
+  File "/home/quant/.openclaw/workspace/chanfund_fusion/run_backtest_v101.py", line 410, in <module>
+    main()
+  File "/home/quant/.openclaw/workspace/chanfund_fusion/run_backtest_v101.py", line 292, in main
+    trade_dates = D.list_trade_dates(
+                  ^^^^^^^^^^^^^^^^^^
+  File "/home/quant/.openclaw/workspace/qlib_source_backup/qlib/utils/__init__.py", line 873, in __getattr__
+    return getattr(self._provider, key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'LocalProvider' object has no attribute 'list_trade_dates'

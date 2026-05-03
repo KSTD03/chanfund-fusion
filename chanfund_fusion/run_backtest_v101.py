@@ -270,9 +270,11 @@ def main():
     all_stocks = load_all_stocks()
     logger.info(f"Total stocks: {len(all_stocks)}")
 
-    # 3. 加载策略
-    sys.path.insert(0, STRATEGY_DIR)
-    from strategy import Strategy
+    # 3. 加载策略（使用chanfund_fusion包，解决相对导入问题）
+    workspace_dir = os.path.dirname(STRATEGY_DIR)
+    if workspace_dir not in sys.path:
+        sys.path.insert(0, workspace_dir)
+    from chanfund_fusion.strategy import Strategy
 
     config_path = os.path.join(STRATEGY_DIR, "config.yaml")
 
