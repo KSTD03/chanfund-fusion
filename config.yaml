@@ -1,0 +1,151 @@
+# ============================================================
+# ChanFund Fusion — 全局参数配置
+# 所有可调参数集中于此，便于超参数搜索和多环境覆盖
+#
+# 策略版本：v1.0.0
+# 最后更新：2026-05-03
+# ============================================================
+
+# ----- 策略标识 -----
+strategy:
+  name: "ChanFund Fusion"
+  version: "1.0.0"
+
+# ----- 技术子系统 -----
+tech:
+  bi_min_kbar: 5                # 笔的最小K线数量
+  bi_min_kbar_dynamic: true     # 允许根据ATR自动调整
+  zs_bi_num: 3                  # 构成中枢的最小笔数
+  noise:
+    er_period: 20               # 效率比率ER计算周期（日线）
+    er_period_30m: 48           # 30分钟线ER计算周期
+    er_hist_window: 500         # ER历史滚动窗口（约2年）
+    er_discard_percentile: 0.20 # 【v1.0.1】丢弃阈值：ER < 此分位 → 信号丢弃
+    er_low_percentile: 0.30     # 降权阈值：ER < 此分位 → 信号系数×0.5
+    er_high_percentile: 0.80    # 增强阈值：ER > 此分位 → 信号系数×1.2
+  macd:
+    fast: 12
+    slow: 26
+    signal: 9
+  trial:
+    position_pct: 0.25          # 试探仓比例（相对标准仓位）
+    expire_kbars: 20            # 试探仓最大K线数
+    stop_multiplier: 1.5        # 试探仓止损放宽倍数
+    upgrade_score: 85           # 基本面高分允许跟随试探
+    upgrade_double_r: 2.0       # 2R主动止盈
+  ma:
+    short_window: 12            # 短期均线 EMA12（趋势方向过滤用）
+    medium_window: 26           # 中期均线 EMA26（趋势方向过滤用）
+    long_window: 250            # 年线（牛熊分界）
+  direction_filter:             # 【新增】方向过滤器参数
+    ema_fast: 12                # 快速EMA
+    ema_slow: 26                # 慢速EMA
+    min_ma_state_history: 20    # 均线状态判断最小历史长度
+    use_long_term_filter: true  # 是否启用年线过滤
+  # 【v1.1】趋势方向过滤（改为strict模式获得更多信号）
+  trend_filter:
+    mode: "strict"              # strict(更快EMA12/26) | adaptive(慢EMA50/100) | off
+    strict:
+      fast: 12
+      slow: 26
+      price_ma_period: 120      # 从200缩短至120，额外放松
+    adaptive:
+      fast: 50
+      slow: 100
+      price_ma_period: 200
+
+# ----- 基本面子系统 -----
+fund:
+  factor_groups:
+    - [roe, gross_margin, debt_ratio]
+    - [fcf_yield, pe, pb]
+    - [accrual, ocf_quality]
+  fin_mix_days: 10              # 财报平滑过渡天数
+  fin_mix_ratio: 0.75           # 新财报初始权重
+  scene_params:
+    vol_high: 0.25              # 年化波动率高阈值
+    vol_low: 0.18               # 年化波动率低阈值
+    vol_window: 20              # 波动率计算窗口
+    credit_z_high: 1.5          # 信用利差Z-Score高阈值
+    credit_z_low: -1.5          # 信用利差Z-Score低阈值
+    value_momentum_z: 1.0       # 价值动量Z阈值
+    vol_extreme_percentile: 0.95 # 波动率极端分位
+  redflag:
+    ar_3y_growth_gap: 0.20      # 应收增速与营收增速差阈值
+    ocf_decline_pct: 0.50       # OCF恶化幅度阈值
+    inventory_turnover_increase: 0.50  # 存货周转天数增加
+    cash_debt_high_ratio: 0.20  # 存贷双高现金/总资产阈值
+    cash_debt_liability_ratio: 0.30    # 存贷双高有息负债/总资产阈值
+    # 【v1.0.1 Task 5】事件PIT确认
+    event_delay_days: 1          # 事件生效延迟（交易日），无法区分ann/impl时的后备
+
+# ----- 融合引擎 -----
+fusion:
+  buy_score_min: 60             # 买入最低融合分
+  strong_buy_score: 85          # 允许跟随试探的高分阈值
+  daily_risk_budget_pct: 0.03   # 日风险预算（总权益%）
+  cooling_period_kbars: 10      # 冷却期K线数（交易日）
+  cooling_stop_count: 2         # 连续止损触发冷却期
+  fund_confidence_high: 1.2     # 基本面高信心调节因子
+  fund_confidence_mid: 1.0      # 基本面中信心调节因子
+  fund_confidence_low: 0.8      # 基本面低信心调节因子
+  fund_score_high: 80           # 高信心阈值
+  fund_score_mid: 70            # 中信心阈值
+  fund_score_low: 60            # 低信心阈值
+  budget_exhaust_threshold: 0.80 # 预算使用超80%减半
+  sort_top_n: 3                 # 同一天最多优先开仓数
+  buffer_days: 2                # 基本面恶化缓冲天数
+  # 【新增】分级仓位系数
+  position_coeff:
+    hard_divergence: 1.0        # 已确认背驰：满仓
+    third_point_buy: 0.8        # 三类买卖点：0.8仓
+    second_class_buy: 0.7       # 二类买卖点：0.7仓
+    soft_divergence: 0.25       # 软背驰：试探仓
+    trend_follow: 0.6           # 趋势跟随：0.6仓
+  # 【新增】红黄牌系数
+  red_card_coeff: 0.0           # 红牌禁止买入
+  yellow_card_coeff: 0.5        # 黄牌仓位减半
+
+# ----- 仓位管理 -----
+position:
+  single_stock_max_pct: 0.08    # 单只股票最大仓位（总权益%）
+  sector_max_pct: 0.25          # 单行业最大暴露（总权益%）
+  slippage: 0.0015              # 滑点（单边0.15%）
+  jump_reject_pct: 0.03         # 有利跳空超3%放弃
+  jump_mark_pct: 0.02           # 不利跳空超2%标记
+  risk_per_trade_pct: 0.01     # 【修改】单笔风险（总权益%），由0.5%改为1%
+  # 【新增】保护性移动止损参数
+  stop_loss:
+    mode: "trailing"            # fixed | trailing | hybrid
+    initial_stop_atr_mult: 2.0  # 初始止损 = ATR × 倍数
+    trail_bi_low: true          # 使用最近笔低点跟踪
+    trail_zs_zg: true           # 中枢向上离开后移损至ZG
+  # 【v1.1】成交量确认过滤
+  volume_confirmation:
+    min_ratio: 0.8              # 信号日成交量 ≥ 20日均量×80%
+    ma_period: 20               # 均量周期
+  # 【v1.1】多级止盈参数
+  take_profit:
+    tp1_pct: 0.10               # 第一止盈阈值 +10%
+    tp1_reduce: 0.30            # 第一止盈减仓30%
+    tp2_pct: 0.20               # 第二止盈阈值 +20%
+    tp2_reduce: 0.50            # 第二止盈减仓50%
+    tp_breakeven_lock: 0.05     # +5%移损至成本（保本锁定）
+    tp_trail_retrace: 0.90      # 峰值回落止盈：当前价≤峰值×90%清仓
+    long_hold_days: 60          # 长持仓判定阈值
+    long_hold_cancel_stop: true # 长持仓是否取消结构止损
+    long_hold_wide_stop_pct: 0.15  # 长持仓宽止损15%
+
+# ----- 市场数据 -----
+data:
+  start_date: '2017-01-01'      # 数据起始日期
+  end_date: '2025-12-31'        # 数据结束日期
+  freq: 'day'                   # 主频：day / 30min
+  benchmark: 'SH000300'         # 基准指数
+
+# ----- 回测参数 -----
+backtest:
+  initial_cash: 1000000         # 初始资金
+  commission: 0.0003            # 佣金率（万三）
+  tax: 0.001                    # 印花税（千一）
+  min_commission: 5.0           # 最低佣金

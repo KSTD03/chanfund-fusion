@@ -1,0 +1,99 @@
+# ============================================================
+# ChanFund Fusion — 基线回测配置
+# 关闭所有 v1.0.0/v1.0.1 优化特性，用固定5%止损 + 固定1%仓位
+# 验证优化后代码架构变更未引入底层逻辑偏差
+# 预期结果：接近原报告 -1.74% 总收益率
+# 允许偏差：±0.5%
+# ============================================================
+
+strategy:
+  name: "ChanFund Fusion (Baseline)"
+  version: "1.0.1-baseline"
+
+tech:
+  bi_min_kbar: 5
+  bi_min_kbar_dynamic: false
+  zs_bi_num: 3
+  # 噪声过滤：关闭（通过ER阈值设为0实现无条件通过）
+  noise:
+    er_period: 20
+    er_hist_window: 500
+    er_discard_percentile: 0.0
+    er_low_percentile: 0.0
+    er_high_percentile: 1.0
+  macd:
+    fast: 12
+    slow: 26
+    signal: 9
+  # 试探仓：关闭
+  trial:
+    position_pct: 0.0
+    expire_kbars: 0
+  # 方向过滤：关闭
+  direction_filter:
+    ema_fast: 12
+    ema_slow: 26
+    use_long_term_filter: false
+  trend_filter:
+    mode: "off"
+
+fund:
+  factor_groups:
+    - [roe, gross_margin, debt_ratio]
+    - [fcf_yield, pe, pb]
+    - [accrual, ocf_quality]
+  fin_mix_days: 10
+  fin_mix_ratio: 0.75
+  scene_params:
+    vol_high: 0.25
+    vol_low: 0.18
+    vol_window: 20
+  # 排雷：关闭（不检查）
+  redflag:
+    ar_3y_growth_gap: 0.20
+    event_delay_days: 1
+
+fusion:
+  buy_score_min: 0             # 不设融合分下限
+  strong_buy_score: 100
+  daily_risk_budget_pct: 0.03
+  cooling_period_kbars: 0      # 冷却期关闭
+  cooling_stop_count: 100      # 不会触发
+  fund_confidence_high: 1.0
+  fund_confidence_mid: 1.0
+  fund_confidence_low: 1.0
+  budget_exhaust_threshold: 0.99
+  sort_top_n: 10
+  buffer_days: 0
+  # 仓位系数：全部1.0（不分级）
+  position_coeff:
+    hard_divergence: 1.0
+    third_point_buy: 1.0
+    second_class_buy: 1.0
+    soft_divergence: 1.0
+    trend_follow: 1.0
+  red_card_coeff: 1.0          # 红黄牌关闭
+  yellow_card_coeff: 1.0
+
+position:
+  single_stock_max_pct: 0.08
+  sector_max_pct: 0.25
+  slippage: 0.0015
+  risk_per_trade_pct: 0.005    # 固定单笔0.5%风险
+  stop_loss:
+    mode: "fixed"              # 固定止损
+    initial_stop_atr_mult: 0.0
+    trail_bi_low: false
+    trail_zs_zg: false
+
+data:
+  start_date: '2017-01-01'
+  end_date: '2025-12-31'
+  freq: 'day'
+  benchmark: 'SH000300'
+
+backtest:
+  initial_cash: 1000000
+  commission: 0.0003
+  tax: 0.001
+  min_commission: 5.0
