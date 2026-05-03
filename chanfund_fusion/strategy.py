@@ -509,17 +509,38 @@ class Strategy(BaseStrategy):
         """每日更新持仓状态
 
         - 检查保护性止损（Phase 1）
+        - 【v1.1】多级止盈检查
         - 基本面恶化检查
         - 试探仓状态更新
         """
-        # 1. 止损检查（保护性移动止损）
-        for pos in self.pos_manager.get_holdings():
+        for pos in list(self.pos_manager.get_holdings()):
             symbol = pos["symbol"]
             current_price = self._get_current_price(symbol, trade_date)
             if current_price is None:
                 continue
 
             stop_price = pos.get("stop_price")
+
+            # 1. 【v1.1】先检查止盈（优先级高于止损）
+            tp_action = self.pos_manager.check_take_profit(
+                symbol, current_price, trade_date
+            )
+            if tp_action:
+                action = tp_action["action"]
+                if action == "close":
+                    self.pos_manager.close_position(
+                        symbol, current_price, trade_date,
+                        tp_action["reason"], skip_cooling=True
+                    )
+                    continue
+                elif action == "reduce":
+                    self.pos_manager.reduce_position(
+                        symbol, current_price, trade_date,
+                        tp_action["reason"], tp_action["reduce_pct"]
+                    )
+                    # 减仓后继续检查止损
+
+            # 2. 止损检查（保护性移动止损）
             if stop_price is not None:
                 # 做多：价格 ≤ 止损位 → 止损
                 if current_price <= stop_price and pos["entry_price"] > stop_price:
@@ -528,7 +549,7 @@ class Strategy(BaseStrategy):
                     )
                     continue
 
-            # 2. 基本面恶化检查
+            # 3. 基本面恶化检查
             fund_score = self._fund_scores.get(symbol, 50)
             if fund_score < 40:
                 # 低于40分，次日减半仓
@@ -544,7 +565,7 @@ class Strategy(BaseStrategy):
                         symbol, current_price, trade_date, "fund_deterioration"
                     )
 
-        # 3. 试探仓检查
+        # 4. 试探仓检查
         for symbol in self.trial_manager.get_active_symbols():
             kbar, _ = self._get_latest_kbar(symbol, trade_date)
             if kbar:
@@ -558,8 +579,6 @@ class Strategy(BaseStrategy):
                         symbol, current_price, trade_date, f"trial_{action}"
                     )
                 elif action == "takeprofit":
-                    # 仅平一半（剩余移损至成本由trial_manager处理）
-                    # 这里把一半权重的交易记录到日志
                     current_price = kbar.get("close", kbar["high"])
                     pos = self.pos_manager.holdings.get(symbol)
                     if pos:

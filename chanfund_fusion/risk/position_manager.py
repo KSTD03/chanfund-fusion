@@ -35,13 +35,27 @@ class PositionManager:
         # 止损参数
         self.stop_config = self.config.get("stop_loss", {})
         self.stop_mode = self.stop_config.get("mode", "trailing")
-        self.initial_stop_atr_mult = self.stop_config.get("initial_stop_atr_mult", 2.0)
+        self.initial_stop_atr_mult = self.stop_config.get("initial_stop_atr_mult", 3.0)  # v1.1: 从2.0放宽至3.0
         self.trail_bi_low = self.stop_config.get("trail_bi_low", True)
         self.trail_zs_zg = self.stop_config.get("trail_zs_zg", True)
+
+        # 【v1.1】止盈参数
+        self.tp_config = self.config.get("take_profit", {})
+        self.tp1_pct = self.tp_config.get("tp1_pct", 0.10)            # +10% 第一止盈
+        self.tp1_reduce = self.tp_config.get("tp1_reduce", 0.30)      # 减30%
+        self.tp2_pct = self.tp_config.get("tp2_pct", 0.20)            # +20% 第二止盈
+        self.tp2_reduce = self.tp_config.get("tp2_reduce", 0.50)      # 减50%
+        self.tp_trail_retrace = self.tp_config.get("tp_trail_retrace", 0.90)  # 峰值回落10%清仓
+        self.tp_breakeven_lock = self.tp_config.get("tp_breakeven_lock", 0.05) # +5%移损至成本
 
         # 冷却期参数
         self.cooling_period = self.fusion_config.get("cooling_period_kbars", 10)
         self.cooling_stop_count = self.fusion_config.get("cooling_stop_count", 2)
+
+        # 【v1.1】长持仓时滞保护
+        self.long_hold_days = self.tp_config.get("long_hold_days", 60)       # 持仓≥60天
+        self.long_hold_cancel_stop = self.tp_config.get("long_hold_cancel_stop", True)  # 取消结构止损
+        self.long_hold_wide_stop_pct = self.tp_config.get("long_hold_wide_stop_pct", 0.15)  # 改用15%宽止损
 
         # 当前持仓 {symbol: holding_info}
         self.holdings: Dict[str, dict] = {}
@@ -250,10 +264,134 @@ class PositionManager:
                             f"[{symbol}] Trail stop moved to zs_zg={zg_stop:.3f}"
                         )
 
+        # --- 【v1.1】长持仓时滞保护 ---
+        hold_days = (current_date - entry_date).days if isinstance(current_date, date) and isinstance(entry_date, date) else 0
+        if hold_days >= self.long_hold_days and self.long_hold_cancel_stop:
+            pnl_pct = (current_price - entry_price) / entry_price
+            # 持仓超60天 且 接近保本（±5%）→ 放宽止损至15%
+            if abs(pnl_pct) < 0.05:
+                wide_stop = entry_price * (1 - self.long_hold_wide_stop_pct)
+                if wide_stop < new_stop:  # 宽止损低于当前止损
+                    new_stop = wide_stop
+                    logger.debug(f"[{symbol}] Long-hold({hold_days}d) override: wide stop={wide_stop:.3f}")
+
+        # --- 【v1.1】保本移损 ---
+        if current_price >= entry_price * (1 + self.tp_breakeven_lock):
+            if new_stop < entry_price:
+                # 涨幅超过5%，止损移至成本
+                new_stop = max(new_stop, entry_price)
+                logger.debug(f"[{symbol}] Breakeven lock: stop moved to {entry_price:.3f}")
+
         # 止损只能上移（做多），不能下移
         if new_stop > current_stop:
             return new_stop
         return current_stop
+
+    # ------------------------------------------------------------------
+    # 【v1.1】多级止盈检查
+    # ------------------------------------------------------------------
+    def check_take_profit(self, symbol: str, current_price: float,
+                          current_date: date) -> Optional[dict]:
+        """多级止盈检查
+
+        Returns:
+            None / {"action": str, "reason": str, "reduce_pct": float}
+        """
+        pos = self.holdings.get(symbol)
+        if not pos or pos.get("status") != "open":
+            return None
+
+        entry_price = pos["entry_price"]
+        pnl_pct = (current_price - entry_price) / entry_price
+
+        # 更新峰值
+        peak = pos.get("peak_price", entry_price)
+        if current_price > peak:
+            pos["peak_price"] = current_price
+            peak = current_price
+        peak_pnl = (peak - entry_price) / entry_price
+
+        # Level 3: 峰值回落止盈（已获利的持仓）
+        if peak_pnl >= self.tp_breakeven_lock:
+            retrace_ratio = current_price / peak
+            if retrace_ratio <= self.tp_trail_retrace:
+                return {
+                    "action": "close",
+                    "reason": f"峰值回落{(1-self.tp_trail_retrace)*100:.0f}%止盈(峰值={peak:.2f})",
+                    "reduce_pct": 1.0,
+                    "pnl_pct": round(pnl_pct * 100, 2),
+                }
+
+        # Level 2: 第二止盈 +20%
+        if pnl_pct >= self.tp2_pct and not pos.get("tp2_triggered", False):
+            pos["tp2_triggered"] = True
+            return {
+                "action": "reduce",
+                "reason": f"第二止盈+{self.tp2_pct*100:.0f}%减{self.tp2_reduce*100:.0f}%",
+                "reduce_pct": self.tp2_reduce,
+                "pnl_pct": round(pnl_pct * 100, 2),
+            }
+
+        # Level 1: 第一止盈 +10%
+        if pnl_pct >= self.tp1_pct and not pos.get("tp1_triggered", False):
+            pos["tp1_triggered"] = True
+            return {
+                "action": "reduce",
+                "reason": f"第一止盈+{self.tp1_pct*100:.0f}%减{self.tp1_reduce*100:.0f}%",
+                "reduce_pct": self.tp1_reduce,
+                "pnl_pct": round(pnl_pct * 100, 2),
+            }
+
+        return None
+
+    def reduce_position(self, symbol: str, price: float, trade_date: date,
+                        reason: str, reduce_pct: float) -> Optional[float]:
+        """减仓（部分止盈）
+
+        Args:
+            symbol: 股票代码
+            price: 减仓价格
+            trade_date: 日期
+            reason: 原因
+            reduce_pct: 减仓比例 (0~1)
+
+        Returns:
+            realized_pnl: 已实现盈亏比例
+        """
+        pos = self.holdings.get(symbol)
+        if not pos:
+            return None
+
+        original_weight = pos["weight"]
+        reduce_weight = original_weight * reduce_pct
+        remaining_weight = original_weight - reduce_weight
+
+        # 更新持仓权重
+        pos["weight"] = remaining_weight
+
+        # 估算已实现盈亏
+        realized_pnl = reduce_weight * (price - pos["entry_price"]) / pos["entry_price"]
+
+        self.trade_log.append({
+            "date": trade_date,
+            "symbol": symbol,
+            "action": "sell",
+            "price": price,
+            "weight": reduce_weight,
+            "reason": reason,
+            "pnl": realized_pnl,
+            "trade_type": "take_profit",
+        })
+
+        # 释放部分预算
+        self.budget_manager.release(trade_date, reduce_weight)
+
+        logger.info(
+            f"[{symbol}] Reduce: price={price:.3f}, reduce={reduce_pct*100:.0f}%, "
+            f"weight: {original_weight:.4%} → {remaining_weight:.4%}, reason={reason}"
+        )
+
+        return realized_pnl
 
     # ------------------------------------------------------------------
     # 冷却期管理（Phase 2）
@@ -335,8 +473,16 @@ class PositionManager:
             pos["stop_price"] = stop_price
 
     def close_position(self, symbol: str, price: float, trade_date: date,
-                       reason: str) -> Optional[dict]:
-        """平仓"""
+                       reason: str, skip_cooling: bool = False) -> Optional[dict]:
+        """平仓
+
+        Args:
+            symbol: 股票代码
+            price: 平仓价格
+            trade_date: 日期
+            reason: 原因
+            skip_cooling: 是否跳过冷却期（止盈清仓时不触发冷却）
+        """
         pos = self.holdings.pop(symbol, None)
         if pos is None:
             return None
@@ -368,8 +514,8 @@ class PositionManager:
             self.consecutive_stops[symbol] = 0
             logger.debug(f"[{symbol}] Profitable close: reset consecutive_stops to 0")
 
-        # 止损则记录冷却期
-        if reason == "stop_loss":
+        # 止损则记录冷却期（止盈清仓不触发冷却）
+        if reason == "stop_loss" and not skip_cooling:
             self.record_stop_loss(symbol, trade_date)
 
         return pos

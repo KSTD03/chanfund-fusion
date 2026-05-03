@@ -42,12 +42,13 @@ tech:
     ema_slow: 26                # 慢速EMA
     min_ma_state_history: 20    # 均线状态判断最小历史长度
     use_long_term_filter: true  # 是否启用年线过滤
-  # 【v1.0.1】趋势方向过滤分层
+  # 【v1.1】趋势方向过滤（改为strict模式获得更多信号）
   trend_filter:
-    mode: "adaptive"            # strict | adaptive | off
+    mode: "strict"              # strict(更快EMA12/26) | adaptive(慢EMA50/100) | off
     strict:
       fast: 12
       slow: 26
+      price_ma_period: 120      # 从200缩短至120，额外放松
     adaptive:
       fast: 50
       slow: 100
@@ -119,6 +120,21 @@ position:
     initial_stop_atr_mult: 2.0  # 初始止损 = ATR × 倍数
     trail_bi_low: true          # 使用最近笔低点跟踪
     trail_zs_zg: true           # 中枢向上离开后移损至ZG
+  # 【v1.1】成交量确认过滤
+  volume_confirmation:
+    min_ratio: 0.8              # 信号日成交量 ≥ 20日均量×80%
+    ma_period: 20               # 均量周期
+  # 【v1.1】多级止盈参数
+  take_profit:
+    tp1_pct: 0.10               # 第一止盈阈值 +10%
+    tp1_reduce: 0.30            # 第一止盈减仓30%
+    tp2_pct: 0.20               # 第二止盈阈值 +20%
+    tp2_reduce: 0.50            # 第二止盈减仓50%
+    tp_breakeven_lock: 0.05     # +5%移损至成本（保本锁定）
+    tp_trail_retrace: 0.90      # 峰值回落止盈：当前价≤峰值×90%清仓
+    long_hold_days: 60          # 长持仓判定阈值
+    long_hold_cancel_stop: true # 长持仓是否取消结构止损
+    long_hold_wide_stop_pct: 0.15  # 长持仓宽止损15%
 
 # ----- 市场数据 -----
 data:

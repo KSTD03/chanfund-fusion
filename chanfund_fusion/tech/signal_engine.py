@@ -42,6 +42,8 @@ class TechSignalEngine:
         self.noise_estimators: Dict[str, NoiseEstimator] = {}
         # 当前交易日（由外部设置）
         self.current_trade_date: Optional[date] = None
+        # 【v1.1】成交量缓存 {symbol: [day_volume, ...]}（用于均量过滤）
+        self._volume_cache: Dict[str, List[float]] = {}
 
         # 30分钟级别活跃股票筛选器
         self.active_filter = ActiveStockFilter(
@@ -68,11 +70,24 @@ class TechSignalEngine:
 
         # 处理事件
         new_tech_signals = []
+
+        # 【v1.1】成交量确认参数
+        vol_config = self.config.get("volume_confirmation", {})
+        vol_min_ratio = vol_config.get("min_ratio", 0.8)  # 成交量不低于20日均量的80%
+        vol_ma_period = vol_config.get("ma_period", 20)
+
         for event in events:
             if isinstance(event, SignalGenEvent):
                 sig = event.signal
+
                 sig.confirmed_time = self._next_trade_date(kbar)
                 sig.status = SignalStatus.PENDING
+
+                # 【v1.1】将入场K线数据附加到信号细节中（供成交量过滤）
+                if "details" not in sig.__dict__ or sig.details is None:
+                    sig.details = {}
+                sig.details["entry_volume"] = kbar.get("volume", 0)
+
                 new_tech_signals.append(sig)
 
             elif isinstance(event, BiConfirmedEvent) or isinstance(event, ZSUpdatedEvent):
@@ -87,6 +102,16 @@ class TechSignalEngine:
         # 更新噪声估计（使用收盘价序列）
         if "close" in kbar:
             self._update_noise(symbol, kbar["close"])
+
+        # 【v1.1】更新成交量缓存
+        kbar_vol = kbar.get("volume", 0)
+        if kbar_vol > 0:
+            if symbol not in self._volume_cache:
+                self._volume_cache[symbol] = []
+            self._volume_cache[symbol].append(kbar_vol)
+            # 仅保留最近50期
+            if len(self._volume_cache[symbol]) > 50:
+                self._volume_cache[symbol] = self._volume_cache[symbol][-50:]
 
     def _invalidate_pending_signals(self, symbol: str, event) -> None:
         """Task 6: 基于结构变化的信号失效机制
@@ -158,24 +183,48 @@ class TechSignalEngine:
         """获取指定交易日的所有已确认可执行信号
 
         规则：confirmed_time <= trade_date 且 状态为PENDING
+        【v1.1】成交量过滤：低于均量80%的信号丢弃
 
         Returns:
             signals: 可执行的信号列表（仅买入信号）
         """
+        vol_config = self.config.get("volume_confirmation", {})
+        vol_min_ratio = vol_config.get("min_ratio", 0.8)  # 成交不低于均量80%
+
         confirmed: List[Signal] = []
         for symbol, sigs in self.pending_signals.items():
             for sig in sigs:
-                if (sig.status == SignalStatus.PENDING
-                        and sig.confirmed_time is not None
-                        and sig.confirmed_time <= trade_date
-                        and sig.signal_type == "buy"):
-                    sig.status = SignalStatus.CONFIRMED
-                    confirmed.append(sig)
+                if (sig.status != SignalStatus.PENDING
+                        or sig.confirmed_time is None
+                        or sig.confirmed_time > trade_date
+                        or sig.signal_type != "buy"):
+                    continue
+
+                # 【v1.1】成交量过滤（剔除无量信号）
+                details = sig.details or {}
+                entry_vol = details.get("entry_volume", 0)
+                if entry_vol > 0:
+                    # 获取20日均量
+                    avg_vol = self._get_avg_volume(symbol, sig.confirmed_time, 20)
+                    if avg_vol > 0 and entry_vol < avg_vol * vol_min_ratio:
+                        sig.status = SignalStatus.REJECTED
+                        logger.debug(
+                            f"[{symbol}] {sig.signal_subtype} rejected: "
+                            f"vol={entry_vol:.0f} < avg×{vol_min_ratio:.1f}={avg_vol*vol_min_ratio:.0f}"
+                        )
+                        continue
+
+                sig.status = SignalStatus.CONFIRMED
+                confirmed.append(sig)
         return confirmed
 
     def get_pending_signals(self, symbol: str, status: SignalStatus = SignalStatus.PENDING) -> List[Signal]:
         """获取指定股票的所有待处理信号"""
         return [s for s in self.pending_signals.get(symbol, []) if s.status == status]
+
+    def get_confirmed_signals(self, symbol: str) -> List[Signal]:
+        """重载：按单只股票查询"""
+        return get_confirmed_signals(self.current_trade_date)
 
     def clear_executed_signals(self, symbol: str) -> None:
         """清除已执行的信号（保持pending队列精简）"""
@@ -213,6 +262,13 @@ class TechSignalEngine:
     def get_active_stocks(self, fund_scores) -> List[str]:
         """获取活跃股票列表（30分钟级别筛选）"""
         return self.active_filter.filter(self.chan_cache, fund_scores)
+
+    def _get_avg_volume(self, symbol: str, trade_date: date, period: int = 20) -> float:
+        """获取股票近N期平均成交量【v1.1】"""
+        vols = self._volume_cache.get(symbol, [])
+        if len(vols) < period:
+            return 0.0
+        return sum(vols[-period:]) / period
 
     def _next_trade_date(self, kbar: dict) -> date:
         """获取下一个交易日（简化：K线时间+1天）"""

@@ -20,6 +20,7 @@ class SignalStatus(Enum):
     EXECUTED = auto()      # 已执行开/平仓
     INVALIDATED = auto()   # 被后续结构失效
     EXPIRED = auto()       # 超时未执行
+    REJECTED = auto()      # 【v1.1】被过滤器拒绝（成交量/风险等）
 
 
 class FxType(Enum):
