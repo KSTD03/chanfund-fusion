@@ -1,0 +1,30 @@
+# Step 2: fund_score_threshold_opt.yaml
+# 基本面过滤阈值优化
+# 固定：仓位(5×20%)、止损止盈(Step1最优)、成交量过滤
+
+# ----- 使用 Step1 最优止盈参数（示例值） -----
+position:
+  take_profit:
+    tp1_pct: 0.10                # 需替换为Step1最优
+    tp1_reduce: 0.30
+    tp2_pct: 0.20
+    tp2_reduce: 0.50
+    tp_trail_retrace: 0.09
+  single_stock_max_pct: 0.20
+  sector_max_pct: 0.50
+  risk_per_trade_pct: 0.005
+  stop_loss:
+    mode: "fixed"
+    fixed_stop_pct: 0.08
+
+# ----- L1待优化参数 -----
+optimization:
+  params:
+    buy_score_min: [50, 55, 60, 65, 70]  # 最低买入融合分
+
+  method: "single_param"         # 单参数枚举
+  metrics:
+    - "win_rate"                 # 胜率曲线
+    - "profit_loss_ratio"        # 盈亏比曲线
+    - "trade_count"              # 交易次数（不过度减少）
+  fold: "train"

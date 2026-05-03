@@ -103,6 +103,20 @@ class FusionRules:
         self.red_card_coeff = self.fusion_config.get("red_card_coeff", 0.0)
         self.yellow_card_coeff = self.fusion_config.get("yellow_card_coeff", 0.5)
 
+        # 【v2.0 学习自czsc】信号因子化
+        tech_config = config.get("tech", {})
+        sf_config = tech_config.get("signal_factors", {})
+        self.signal_factors_enabled = sf_config.get("enabled", True)
+        self.confluence_min = sf_config.get("confluence_min", 1)
+        self.confluence_bonus = sf_config.get("confluence_bonus", 1.2)
+        self.signal_weight_map = sf_config.get("signal_weight", {})
+
+        # 【v2.0】市场环境分类
+        me_config = tech_config.get("market_env", {})
+        self.trending_threshold = me_config.get("trending_threshold", 0.60)
+        self.trending_weight = me_config.get("trending_weight", 1.2)
+        self.oscillating_weight = me_config.get("oscillating_weight", 0.8)
+
     def filter_and_merge(
         self,
         tech_signals: List[Signal],
@@ -454,6 +468,61 @@ class FusionRules:
         """检查跳空"""
         jump_reject_pct = self.config.get("position", {}).get("jump_reject_pct", 0.03)
         return False
+
+    # ------------------------------------------------------------------
+    # v2.0 信号因子化（学习自czsc）
+    # ------------------------------------------------------------------
+    def _get_factor_score(self, signal: Signal) -> float:
+        """信号因子化评分
+
+        将离散信号类型转为连续因子值，支持多信号共振
+        """
+        base = self.signal_weight_map.get(signal.signal_subtype, 0.5)
+        # 信号自身置信度（基于完整性）
+        confidence = 1.0
+        if signal.status != SignalStatus.CONFIRMED:
+            confidence = 0.5
+        if not signal.details:
+            confidence *= 0.9
+        return base * confidence
+
+    def _calc_confluence(
+        self,
+        symbol: str,
+        all_signals: List[Signal],
+        noise_ratio: float = 0.5,
+    ) -> Tuple[float, int]:
+        """计算多信号共振得分
+
+        同一只股票的多重信号（不同频率/不同级别）产生共振
+        共振因子数越多 → 信号越可靠
+
+        Returns:
+            (confluence_score, factor_count)
+        """
+        if not self.signal_factors_enabled:
+            return 1.0, 1
+
+        symbol_signals = [s for s in all_signals if s.symbol == symbol]
+        factor_count = len(symbol_signals)
+
+        if factor_count >= self.confluence_min:
+            return self.confluence_bonus, factor_count
+        return 1.0, factor_count
+
+    def _get_market_env_coeff(self, noise_ratio: float) -> float:
+        """市场环境调节系数
+
+        趋势市 → 信号增强
+        震荡市 → 信号降权
+        高噪声 → 大幅降权
+        """
+        if noise_ratio > self.trending_threshold:
+            return self.trending_weight
+        elif noise_ratio < self.er_discard_percentile:
+            return 0.0
+        else:
+            return self.oscillating_weight
 
     def _calc_fused_score(self, signal: Signal, fund_score: float) -> float:
         """计算融合分（0-100）

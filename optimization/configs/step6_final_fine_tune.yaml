@@ -1,0 +1,16 @@
+# Step 6: final_fine_tune_v2.yaml
+# 组合层参数最终微调（⚠️ 仅在验证集上操作）
+# 所有L0、L1参数已锁定
+
+# ----- L3可微调参数（缩窄范围） -----
+optimization:
+  params:
+    cooling_period_kbars: [8, 10, 12]         # 冷却期天数
+    cooling_stop_count: [2, 3]                 # 触发冷却的连续止损次数
+    sector_max_pct: [0.20, 0.25]               # 行业暴露上限
+
+  method: "local_grid_search"    # 2×2×2=8次回测
+  metric: "return_drawdown_ratio"
+  fold: "valid"                  # ⚠️ 仅验证集
+  constraint:
+    - "max_drawdown <= 0.15"     # 不劣于-15%

@@ -124,6 +124,30 @@ position:
   volume_confirmation:
     min_ratio: 0.8              # 信号日成交量 ≥ 20日均量×80%
     ma_period: 20               # 均量周期
+  # 【v2.0 学习自czsc】信号因子化与多信号共振
+  signal_factors:
+    enabled: true               # 启用因子化信号
+    confluence_min: 1            # 最小共振因子数
+    confluence_bonus: 1.2        # 多因子共振系数乘数
+    signal_weight:
+      hard_divergence: 1.0
+      third_point_buy: 0.8
+      second_class_buy: 0.6
+      soft_divergence: 0.3
+      trend_follow: 0.5
+  # 【v2.0 学习自chanlun-pro】多周期递归
+  multi_cycle:
+    enabled: false               # 暂不启用，待数据就绪
+    lower_freq: "30min"
+    upper_freq: "day"
+  # 【v2.0 学习自czsc】市场环境分类
+  market_env:
+    classify_mode: "er_based"    # er_based | ma_based
+    trending_threshold: 0.60     # ER分位>60%定义为趋势市
+    oscillating_upper: 0.60      # ER分位<60%定义为震荡
+    oscillating_lower: 0.20      # ER分位<20%定义为高噪声
+    trending_weight: 1.2         # 趋势市信号增强
+    oscillating_weight: 0.8      # 震荡市信号降权
   # 【v1.1】多级止盈参数
   take_profit:
     tp1_pct: 0.10               # 第一止盈阈值 +10%

@@ -1,0 +1,18 @@
+# Step 5: signal_weight_map_opt.yaml
+# 信号类型仓位映射优化 — 网格搜索
+# 固定：其他参数同前
+
+# ----- L2待优化参数 -----
+optimization:
+  params:
+    hard_divergence_coeff: [1.0, 1.2]      # HD仓位系数
+    third_point_buy_coeff: [0.6, 0.8]       # 3B仓位系数
+
+  # 二类买点和软背驰保持当前值
+  fixed:
+    second_class_buy_coeff: 0.7
+    soft_divergence_coeff: 0.25
+
+  method: "grid_search"          # 2×2=4次回测
+  metric: "return_drawdown_ratio"
+  fold: "valid"                  # 验证集
