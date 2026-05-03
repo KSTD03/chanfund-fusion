@@ -1,0 +1,34 @@
+# ============================================================
+# 实验参数覆盖文件
+# 继承 base_config.yaml，只写本次实验需要改动的参数
+# 配合 config_schema.apply_overrides 使用
+#
+# ChanFund Fusion v1.0.0
+# ============================================================
+
+# ---- 实验名称：缠论参数敏感性测试 ----
+tech:
+  bi_min_kbar: 6                # 增大最小笔K线数（更保守）
+  noise:
+    er_period: 24               # 增大ER周期（更慢响应）
+    er_low_percentile: 0.25     # 降低噪声阈值（更多信号通过）
+
+# ---- 单参数实验：融合分数线 ----
+# fusion:
+#   buy_score_min: 65           # 提高买入门槛
+#   strong_buy_score: 90        # 高分跟随门槛
+
+# ---- 单参数实验：仓位管理 ----
+# position:
+#   single_stock_max_pct: 0.06  # 降低单只上限
+#   daily_risk_budget_pct: 0.02 # 降低日预算
+
+# ---- 单参数实验：止损参数 (Phase 1) ----
+# position:
+#   stop_loss:
+#     initial_stop_atr_mult: 3.0  # 更宽松的初始止损
+
+# ---- 单参数实验：趋势过滤 (Phase 4) ----
+# tech:
+#   direction_filter:
+#     use_long_term_filter: false  # 关闭年线过滤
