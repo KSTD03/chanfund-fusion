@@ -403,34 +403,47 @@ class Strategy(BaseStrategy):
         self.fund_engine.pit_data = self.pit_data
 
     def _warm_up(self, current_date: date):
-        """预热：回放历史K线建立缠论结构，不生成信号"""
+        """预热：回放历史K线建立缠论结构，不生成信号（优化1：流式处理+内存释放）"""
         logger.info(f"Starting ChanFund Fusion warm-up (until {current_date})...")
 
         start_date = self._get_warmup_start()
 
+        # 内存标记
+        import psutil
+        mem_before = psutil.Process().memory_info().rss / 1024**3
+        logger.warning(f"[MEM] Warm-up start: {mem_before:.2f} GB")
+
         if self.market_data and self._universe:
-            for symbol in self._universe[:100]:  # 限制预热数量
+            warmup_limit = min(len(self._universe), 500)
+            for symbol in self._universe[:warmup_limit]:
+                if symbol in self.tech_engine.chan_cache:
+                    continue
                 try:
                     kbars = self._get_kbars(symbol, start_date, current_date)
                     if kbars.empty:
                         continue
 
-                    # 转为dict列表
                     kbar_list = self._df_to_kbar_list(kbars)
-
-                    # 预热技术引擎
                     self.tech_engine.warm_up(symbol, kbar_list)
 
-                    # 预热噪声估计
                     if "close" in kbars.columns:
                         close_series = kbars["close"].values
                         self.tech_engine.update_noise_series(symbol, close_series)
+
+                    # 优化1：循环末尾释放中间数据
+                    del kbars
+                    del kbar_list
+                    if 'close_series' in dir():
+                        del close_series
 
                 except Exception as e:
                     logger.warning(f"[{symbol}] Warm-up failed: {e}")
 
         self._is_warmed_up = True
-        logger.info("Warm-up complete")
+        import gc
+        gc.collect()
+        mem_after = psutil.Process().memory_info().rss / 1024**3
+        logger.warning(f"[MEM] Warm-up complete: {mem_after:.2f} GB (freed {mem_before-mem_after:.2f} GB)")
 
     # ------------------------------------------------------------------
     # 数据获取

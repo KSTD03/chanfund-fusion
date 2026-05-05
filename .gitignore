@@ -1,0 +1,46 @@
+# --- Python bytecode ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+*.so
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+*~
+
+# --- IDE ---
+.vscode/
+.idea/
+
+# --- Project-specific junk (outside chanfund_fusion/) ---
+/AGENTS.md
+/HEARTBEAT.md
+/IDENTITY.md
+/SOUL.md
+/TOOLS.md
+/USER.md
+/email_config.json
+/cache/
+/knowledge_base/
+/ma_reform_study/
+/memory/
+/qlib_source_backup/
+/quant/
+/scripts_archive/
+/strategy/
+/.clawhub/
+/.openclaw/
+/jiujiao_agent/
+/skills/
+/.backtest_done
+/backtest_*.out
+/backtest_*.log
+/run_chanfund*.py
+/run_backtest*.py
+/run_reversal*.py
+/reversal_*.out
+/reversal_*.log

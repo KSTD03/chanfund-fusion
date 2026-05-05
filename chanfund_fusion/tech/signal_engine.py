@@ -222,10 +222,6 @@ class TechSignalEngine:
         """获取指定股票的所有待处理信号"""
         return [s for s in self.pending_signals.get(symbol, []) if s.status == status]
 
-    def get_confirmed_signals(self, symbol: str) -> List[Signal]:
-        """重载：按单只股票查询"""
-        return get_confirmed_signals(self.current_trade_date)
-
     def clear_executed_signals(self, symbol: str) -> None:
         """清除已执行的信号（保持pending队列精简）"""
         if symbol in self.pending_signals:

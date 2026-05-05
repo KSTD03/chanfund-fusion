@@ -103,6 +103,20 @@ class FusionRules:
         self.red_card_coeff = self.fusion_config.get("red_card_coeff", 0.0)
         self.yellow_card_coeff = self.fusion_config.get("yellow_card_coeff", 0.5)
 
+        # 【v2.0 学习自czsc】信号因子化
+        tech_config = config.get("tech", {})
+        sf_config = tech_config.get("signal_factors", {})
+        self.signal_factors_enabled = sf_config.get("enabled", True)
+        self.confluence_min = sf_config.get("confluence_min", 1)
+        self.confluence_bonus = sf_config.get("confluence_bonus", 1.2)
+        self.signal_weight_map = sf_config.get("signal_weight", {})
+
+        # 【v2.0】市场环境分类
+        me_config = tech_config.get("market_env", {})
+        self.trending_threshold = me_config.get("trending_threshold", 0.60)
+        self.trending_weight = me_config.get("trending_weight", 1.2)
+        self.oscillating_weight = me_config.get("oscillating_weight", 0.8)
+
     def filter_and_merge(
         self,
         tech_signals: List[Signal],
@@ -147,26 +161,45 @@ class FusionRules:
 
             # ================ 过滤管道 ================
 
-            # --- Phase 2: ER噪声过滤（v1.0.1 平滑降权） ---
-            noise_coeff = self._get_noise_coeff(noise_ratios.get(symbol, 0.5))
-            if noise_coeff <= 0:
+            # --- P2.2: ER噪声过滤 → 分级软降权（原为硬拒绝<20%）---
+            noise_percentile = noise_ratios.get(symbol, 0.5)
+            noise_coeff = self._get_noise_coeff(noise_percentile)
+            if noise_percentile < 0.15:
+                # 极端噪声仍丢弃
                 self.logger.log_rejected(
                     symbol, RejectReason.HIGH_NOISE,
-                    f"ER noise filter: percentile={noise_ratios.get(symbol, 0.5):.3f} "
-                    f"< {self.er_discard_percentile:.0%}",
+                    f"ER extreme noise: {noise_percentile:.3f} < 0.15",
+                    trade_date, signal_type=subtype,
+                )
+                continue
+            elif noise_percentile < 0.25:
+                # 中等噪声：降权0.5通过
+                sig.confidence = getattr(sig, 'confidence', 1.0) * 0.5
+                sig.downgrade_reasons = getattr(sig, 'downgrade_reasons', []) + ["HIGH_NOISE"]
+                noise_coeff = 0.5
+                self.logger.log_accepted(
+                    symbol, subtype, 0.5, 0, 0, trade_date,
+                    f"ER noise soft-downgrade: {noise_percentile:.3f} in [0.15, 0.25)",
+                )
+            elif noise_coeff <= 0:
+                # 老逻辑保底
+                self.logger.log_rejected(
+                    symbol, RejectReason.HIGH_NOISE,
+                    f"ER noise filter: {noise_percentile:.3f}",
                     trade_date, signal_type=subtype,
                 )
                 continue
 
-            # --- Phase 4: 趋势方向过滤（v1.0.1 分层模式）---
+            # --- P2.1: 趋势方向过滤 → 软降权（原为硬拒绝）---
             if not self._pass_direction_filter(symbol, ma_states, noise_ratios):
                 mode = getattr(self, 'trend_filter_mode', 'strict')
-                self.logger.log_rejected(
-                    symbol, RejectReason.TREND_DIRECTION,
-                    f"Direction filter ({mode}): {ma_states.get(symbol, 'unknown')}",
-                    trade_date, signal_type=subtype,
+                # 改为降权通过而非丢弃
+                sig.confidence = getattr(sig, 'confidence', 1.0) * 0.6
+                sig.downgrade_reasons = getattr(sig, 'downgrade_reasons', []) + ["TREND_AGAINST"]
+                self.logger.log_accepted(
+                    symbol, subtype, 0.6, 0, 0, trade_date,
+                    f"Direction filter soft-downgrade ({mode}): {ma_states.get(symbol, 'unknown')}",
                 )
-                continue
 
             # --- Phase 5: 红黄牌过滤 ---
             redflag = redflag_results.get(symbol)
@@ -198,7 +231,19 @@ class FusionRules:
             # 【Phase 3】计算信号分级仓位系数
             base_coeff = self._get_tech_coeff(subtype)
             # Task 2: 乘以噪声降权系数
-            total_coeff = base_coeff * card_coeff * noise_coeff
+            # P2.1: 叠加趋势方向降权系数
+            trend_coeff = getattr(sig, 'confidence', 1.0)
+            total_coeff = base_coeff * card_coeff * noise_coeff * trend_coeff
+
+            # --- P2.3: 降权系数下限保护 ---
+            MIN_CONFIDENCE = 0.3
+            if total_coeff < MIN_CONFIDENCE:
+                self.logger.log_rejected(
+                    symbol, RejectReason.LOW_CONFIDENCE,
+                    f"MULTI_DOWNGRADE_BELOW_MIN: coeff={total_coeff:.3f} < {MIN_CONFIDENCE}",
+                    trade_date, signal_type=subtype,
+                )
+                continue
 
             # 入队列
             tech_priority = self._get_tech_priority(subtype)
@@ -454,6 +499,61 @@ class FusionRules:
         """检查跳空"""
         jump_reject_pct = self.config.get("position", {}).get("jump_reject_pct", 0.03)
         return False
+
+    # ------------------------------------------------------------------
+    # v2.0 信号因子化（学习自czsc）
+    # ------------------------------------------------------------------
+    def _get_factor_score(self, signal: Signal) -> float:
+        """信号因子化评分
+
+        将离散信号类型转为连续因子值，支持多信号共振
+        """
+        base = self.signal_weight_map.get(signal.signal_subtype, 0.5)
+        # 信号自身置信度（基于完整性）
+        confidence = 1.0
+        if signal.status != SignalStatus.CONFIRMED:
+            confidence = 0.5
+        if not signal.details:
+            confidence *= 0.9
+        return base * confidence
+
+    def _calc_confluence(
+        self,
+        symbol: str,
+        all_signals: List[Signal],
+        noise_ratio: float = 0.5,
+    ) -> Tuple[float, int]:
+        """计算多信号共振得分
+
+        同一只股票的多重信号（不同频率/不同级别）产生共振
+        共振因子数越多 → 信号越可靠
+
+        Returns:
+            (confluence_score, factor_count)
+        """
+        if not self.signal_factors_enabled:
+            return 1.0, 1
+
+        symbol_signals = [s for s in all_signals if s.symbol == symbol]
+        factor_count = len(symbol_signals)
+
+        if factor_count >= self.confluence_min:
+            return self.confluence_bonus, factor_count
+        return 1.0, factor_count
+
+    def _get_market_env_coeff(self, noise_ratio: float) -> float:
+        """市场环境调节系数
+
+        趋势市 → 信号增强
+        震荡市 → 信号降权
+        高噪声 → 大幅降权
+        """
+        if noise_ratio > self.trending_threshold:
+            return self.trending_weight
+        elif noise_ratio < self.er_discard_percentile:
+            return 0.0
+        else:
+            return self.oscillating_weight
 
     def _calc_fused_score(self, signal: Signal, fund_score: float) -> float:
         """计算融合分（0-100）
