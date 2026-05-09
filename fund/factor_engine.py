@@ -248,7 +248,7 @@ class FundFactorEngine:
         for symbol in universe:
             cache = self.cache.get(symbol, {})
             if not cache:
-                scores[symbol] = 0.0
+                scores[symbol] = 50.0  # 无财务数据时给中间分，避免硬过滤全部失效
                 continue
 
             raw_score = self._weighted_sum(symbol)

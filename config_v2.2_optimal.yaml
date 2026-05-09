@@ -1,0 +1,164 @@
+# ============================================================
+# ChanFund Fusion v2.1 — DataFull 配置
+# 使用全量Tushare财务数据
+# ============================================================
+
+strategy:
+  name: "ChanFund Fusion"
+  version: "2.2-optimal"
+
+tech:
+  bi_min_kbar: 5
+  bi_min_kbar_dynamic: true
+  zs_bi_num: 3
+  noise:
+    er_period: 20
+    er_period_30m: 48
+    er_hist_window: 500
+    er_discard_percentile: 0.20
+    er_low_percentile: 0.30
+    er_high_percentile: 0.80
+  macd:
+    fast: 12
+    slow: 26
+    signal: 9
+  trial:
+    position_pct: 0.25
+    expire_kbars: 20
+    stop_multiplier: 1.5
+    upgrade_score: 85
+    upgrade_double_r: 2.0
+  ma:
+    short_window: 12
+    medium_window: 26
+    long_window: 250
+  direction_filter:
+    ema_fast: 12
+    ema_slow: 26
+    min_ma_state_history: 20
+    use_long_term_filter: true
+  trend_filter:
+    mode: "strict"
+    strict:
+      fast: 12
+      slow: 26
+      price_ma_period: 120
+    adaptive:
+      fast: 50
+      slow: 100
+      price_ma_period: 200
+
+fund:
+  factor_groups:
+    - [roe, gross_margin, debt_ratio]
+    - [fcf_yield, pe, pb]
+    - [accrual, ocf_quality]
+  fin_mix_days: 10
+  fin_mix_ratio: 0.75
+  scene_params:
+    vol_high: 0.25
+    vol_low: 0.18
+    vol_window: 20
+    credit_z_high: 1.5
+    credit_z_low: -1.5
+    value_momentum_z: 1.0
+    vol_extreme_percentile: 0.95
+  redflag:
+    ar_3y_growth_gap: 0.20
+    ocf_decline_pct: 0.50
+    inventory_turnover_increase: 0.50
+    cash_debt_high_ratio: 0.20
+    cash_debt_liability_ratio: 0.30
+    event_delay_days: 1
+
+fusion:
+  buy_score_min: 30.0
+  strong_buy_score: 85
+  daily_risk_budget_pct: 0.03
+  cooling_period_kbars: 10
+  cooling_stop_count: 2
+  fund_confidence_high: 1.2
+  fund_confidence_mid: 1.0
+  fund_confidence_low: 0.8
+  fund_score_high: 80
+  fund_score_mid: 70
+  fund_score_low: 50
+  budget_exhaust_threshold: 0.80
+  sort_top_n: 3
+  buffer_days: 2
+  position_coeff:
+    hard_divergence: 1.0
+    third_point_buy: 0.8
+    second_class_buy: 0.7
+    soft_divergence: 0.25
+    trend_follow: 0.6
+  red_card_coeff: 0.0
+  yellow_card_coeff: 0.5
+
+position:
+  single_stock_max_pct: 0.08
+  sector_max_pct: 0.25
+  slippage: 0.0015
+  jump_reject_pct: 0.03
+  jump_mark_pct: 0.02
+  risk_per_trade_pct: 0.01
+  stop_loss:
+    mode: "trailing"
+    initial_stop_atr_mult: 2.0
+    trail_bi_low: true
+    trail_zs_zg: true
+  volume_confirmation:
+    min_ratio: 0.8
+    ma_period: 20
+  signal_factors:
+    enabled: true
+    confluence_min: 1
+    confluence_bonus: 1.2
+    signal_weight:
+      hard_divergence: 1.0
+      third_point_buy: 0.8
+      second_class_buy: 0.6
+      soft_divergence: 0.3
+      trend_follow: 0.5
+  multi_cycle:
+    enabled: false
+    lower_freq: "30min"
+    upper_freq: "day"
+  market_env:
+    classify_mode: "er_based"
+    trending_threshold: 0.60
+    oscillating_upper: 0.60
+    oscillating_lower: 0.20
+    trending_weight: 1.0
+    oscillating_weight: 1.0
+  take_profit:
+    tp1_pct: 0.06
+    tp1_reduce: 0.30
+    tp2_pct: 0.13
+    tp2_reduce: 0.50
+    tp_breakeven_lock: 0.05
+    tp_trail_retrace: 0.08
+    long_hold_days: 60
+    long_hold_cancel_stop: true
+    long_hold_wide_stop_pct: 0.15
+
+# ----- v2.1 新增: 使用scores.parquet -----
+data:
+  start_date: '2017-01-01'
+  end_date: '2025-12-31'
+  freq: 'day'
+  benchmark: 'SH000300'
+  # 财务数据路径
+  financial_dir: "quant/data/financial"               # v1.4兼容CSV
+  financial_scores: "financial_data/scores.parquet"   # v2.1新增Parquet评分
+  # 数据源
+  data_format: "parquet"                              # daily_parquet
+  data_dir: "quant/data/daily_parquet"
+
+backtest:
+  initial_cash: 1000000
+  commission: 0.0003
+  tax: 0.001
+  min_commission: 5.0
+  # v2.1: 启用scores.parquet增强基本面评分
+  use_scores_parquet: true
