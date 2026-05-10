@@ -1,0 +1,43 @@
+# Step 1: tech_take_profit_opt.yaml
+# 技术分析止盈参数优化 — L1级序贯试验
+# 冻结：基本面过滤(关)、仓位(5×20%)、止损(8%硬止损)、成交量过滤(≥20日均量×80%)
+
+# ----- Step 1 专用覆盖 -----
+fund:
+  buy_score_min: 0               # 关闭基本面过滤
+
+position:
+  single_stock_max_pct: 0.20     # 5只×20%
+  sector_max_pct: 0.50           # 放宽容
+  risk_per_trade_pct: 0.005      # 单笔风险0.5%
+  stop_loss:
+    mode: "fixed"                # 硬止损
+    fixed_stop_pct: 0.08         # 8%硬止损
+
+tech:
+  volume_confirmation:
+    enabled: true
+    min_ratio: 0.80
+    ma_period: 20
+
+fusion:
+  buy_score_min: 0               # 关闭基本面过滤
+  position_coeff:
+    hard_divergence: 1.0
+    third_point_buy: 1.0
+    second_class_buy: 1.0
+    soft_divergence: 1.0
+    trend_follow: 1.0
+
+# ----- L1待优化参数（搜索范围） -----
+optimization:
+  params:
+    tp1_pct: [0.08, 0.10, 0.12, 0.15]     # 第一止盈比例
+    tp1_reduce: [0.20, 0.30, 0.40]          # 第一止盈减仓
+    tp2_pct: [0.15, 0.20, 0.25, 0.30]      # 第二止盈比例
+    tp2_reduce: [0.40, 0.50, 0.60]          # 第二止盈减仓
+    tp_trail_retrace: [0.06, 0.09, 0.12]    # 峰值回落止盈阈值
+
+  method: "sequential"             # 序贯试验法
+  metric: "return_drawdown_ratio"  # 收益回撤比
+  fold: "train"                    # 仅使用训练集

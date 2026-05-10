@@ -71,6 +71,8 @@ FUND_SCORE_MIN = 50
 FUND_ROE_MIN = 0.05
 FUND_GM_MIN = 0.15
 FUND_REV_GROWTH_MIN = -0.20
+FUND_DEFAULT_SCORE = 55.0       # 无财务数据时的默认评分
+TP_PROTECT_DAYS = 0            # 保护期（开仓后几天内不触发止盈）
 
 # ========== v2.0 新增参数 ==========
 # 信号因子化基础分
@@ -124,17 +126,53 @@ def load_daily_csv_data(data_dir: str, max_files: int = 0, use_parquet: bool = T
     """
     data_p = Path(data_dir)
     parquet_dir = data_p.parent / "daily_parquet"
+    all_pq = parquet_dir / "_all.parquet"
     has_parquet = parquet_dir.exists() and len(list(parquet_dir.glob("*.parquet"))) > 0
     
-    # ---- Parquet模式 ----
+    # ---- Parquet模式（优先使用合并文件） ----
     if use_parquet and has_parquet:
-        pq_files = sorted(parquet_dir.glob("*.parquet"))
-        if max_files > 0:
-            pq_files = pq_files[:max_files]
-        logger.info(f"📂 加载 {len(pq_files)} 个Parquet文件...")
         t0 = time.time()
         data: dict = {}
         PQC = ["date", "open", "high", "low", "close", "volume"]
+        
+        # 快车道：用 _all.parquet 一次加载所有数据
+        if all_pq.exists():
+            logger.info(f"📂 加载合并Parquet: {all_pq}...")
+            all_df = pd.read_parquet(all_pq, columns=["code"] + PQC)
+            if max_files > 0:
+                codes = all_df["code"].unique()[:max_files]
+                all_df = all_df[all_df["code"].isin(codes)]
+            # 转换为 {date: {code: kbar}} 格式（向量化）
+            for code, grp in all_df.groupby("code"):
+                if not (code.startswith("sh.") or code.startswith("sz.") or code.startswith("bj.")):
+                    code = f"sh.{code}" if code[0] == '6' else f"sz.{code}"
+                for _, row in grp.iterrows():
+                    d_str = str(row["date"]).strip()[:10]
+                    if len(d_str) < 8:
+                        continue
+                    close = float(row["close"])
+                    if close <= 0:
+                        continue
+                    data.setdefault(d_str, {})[code] = {
+                        "open": float(row["open"]), "high": float(row["high"]),
+                        "low": float(row["low"]), "close": close,
+                        "volume": float(row["volume"]), "amount": 0.0}
+            del all_df
+            elapsed = time.time() - t0
+            try:
+                import psutil as _ps
+                mem = _ps.Process().memory_info().rss / 1024**2
+                logger.info(f"✅ Parquet(合并)加载完成: {len(data)}天, {elapsed:.0f}s, mem={mem:.0f}MB")
+            except:
+                logger.info(f"✅ Parquet(合并)加载完成: {len(data)}天, {elapsed:.0f}s")
+            return data
+        
+        # 慢车道：逐个文件加载
+        pq_files = sorted(parquet_dir.glob("*.parquet"))
+        pq_files = [f for f in pq_files if f.name != "_all.parquet"]
+        if max_files > 0:
+            pq_files = pq_files[:max_files]
+        logger.info(f"📂 加载 {len(pq_files)} 个Parquet文件...")
         for fpath in pq_files:
             try:
                 df = pd.read_parquet(fpath, columns=PQC)
@@ -290,18 +328,21 @@ def load_index_data(data_dir: str) -> dict:
 def get_fund_score(code: str, date_str: str, fin_cache: dict) -> float:
     """基本面综合评分 0-100（同v1.4）"""
     if not fin_cache or code not in fin_cache:
-        return 55.0  # 无数据时给中间偏上分，防止硬过滤造成零交易
+        return FUND_DEFAULT_SCORE  # 无数据时给中间偏上分，防止硬过滤造成零交易
     fin_dates = sorted(fin_cache[code].keys())
     if not fin_dates:
-        return 55.0
+        return FUND_DEFAULT_SCORE
     best = None
     for fd in reversed(fin_dates):
         if fd <= date_str:
             best = fd
             break
     if best is None:
-        return 50.0
+        return FUND_DEFAULT_SCORE
     f = fin_cache[code][best]
+    # 优先使用预计算评分
+    if "fund_score" in f and f["fund_score"] > 0:
+        return f["fund_score"]
     score = 0.0
     roe = f.get("roe", 0)
     if roe >= 0.20: score += 30
@@ -956,23 +997,89 @@ def generate_report(result: dict, label: str, n_stocks: int,
 def main():
     global _T_START
     parser = argparse.ArgumentParser(description="ChanFund Fusion v2.0 全量回测")
-    parser.add_argument("--mode", choices=["all", "train", "valid", "test"], default="test",
+    parser.add_argument("--mode", choices=["all", "train", "valid", "test", "grid"], default="test",
                         help="回测阶段")
     parser.add_argument("--capital", type=float, default=INITIAL_CAPITAL,
                         help=f"初始资金 (默认: {INITIAL_CAPITAL:,})")
     parser.add_argument("--quick", action="store_true",
                         help="快速模式（仅100只股票）")
+    # v2.1+ 网格搜索参数
+    parser.add_argument("--max-stocks", type=int, default=0,
+                        help="限制股票数 (0=全量)")
+    parser.add_argument("--batched", action="store_true",
+                        help="分批次模式 (4441只分批500)")
+    parser.add_argument("--config", type=str, default=None,
+                        help="YAML配置文件路径")
+    parser.add_argument("--env-bull", type=float, default=None,
+                        help="牛市环境乘数")
+    parser.add_argument("--env-oscillate", type=float, default=None,
+                        help="震荡市环境乘数")
+    parser.add_argument("--env-bear", type=float, default=None,
+                        help="熊市环境乘数")
+    parser.add_argument("--buy-score-min", type=float, default=None,
+                        help="最低买入融合分")
+    parser.add_argument("--default-score", type=float, default=None,
+                        help="无数据时默认评分")
+    parser.add_argument("--tp1", type=float, default=None,
+                        help="第一止盈阈值")
+    parser.add_argument("--tp2", type=float, default=None,
+                        help="第二止盈阈值")
+    parser.add_argument("--tp-trail", type=float, default=None,
+                        help="峰值回落止盈比例")
+    parser.add_argument("--tp-protect", type=int, default=None,
+                        help="保护期天数")
     args = parser.parse_args()
+
+    # 应用网格搜索参数覆盖
+    if args.env_bull is not None:
+        ENV_MULTIPLIER["BULL"] = args.env_bull
+    if args.env_oscillate is not None:
+        ENV_MULTIPLIER["OSCILLATE"] = args.env_oscillate
+    if args.env_bear is not None:
+        ENV_MULTIPLIER["BEAR"] = args.env_bear
+    if args.buy_score_min is not None:
+        global FUND_SCORE_MIN; FUND_SCORE_MIN = args.buy_score_min
+    if args.default_score is not None:
+        global FUND_DEFAULT_SCORE; FUND_DEFAULT_SCORE = args.default_score
+    if args.tp1 is not None:
+        global TP1_PCT; TP1_PCT = args.tp1
+    if args.tp2 is not None:
+        global TP2_PCT; TP2_PCT = args.tp2
+    if args.tp_trail is not None:
+        global TP_TRAIL_RETRACE; TP_TRAIL_RETRACE = args.tp_trail
+    if args.tp_protect is not None:
+        global TP_PROTECT_DAYS; TP_PROTECT_DAYS = args.tp_protect
 
     setup_logging()
     _T_START = time.time()
     logger.info(f"🔰 ChanFund Fusion v2.0 全量回测")
-    logger.info(f"   模式={args.mode}, 资金={args.capital:,}, {'⚡快速' if args.quick else '全量'}")
+    logger.info(f"   模式={args.mode}, 资金={args.capital:,}, "
+                f"{'⚡快速' if args.quick else '全量'}{' 分批次' if args.batched else ''}")
+    if args.max_stocks:
+        logger.info(f"   股票数限制: {args.max_stocks}")
 
     # 加载数据
-    stock_limit = 100 if args.quick else 0
+    stock_limit = 100 if args.quick else args.max_stocks if args.max_stocks else 0
     data = load_daily_csv_data(str(DATA_DIR), max_files=stock_limit)
     fin_cache = load_financial_data(str(FIN_DIR))
+    # 尝试加载 scores.parquet 增强
+    scores_pq = Path(_WORKSPACE) / "financial_data" / "scores.parquet"
+    if scores_pq.exists():
+        try:
+            scores_df = pd.read_parquet(scores_pq)
+            # 合并到 fin_cache: 按 stock+end_date 匹配
+            for _, row in scores_df.iterrows():
+                code = row["ts_code"]
+                ed = row["end_date"]
+                score = float(row["fund_score"])
+                if code not in fin_cache:
+                    fin_cache[code] = {}
+                if ed not in fin_cache[code] or score > 0:
+                    fin_cache[code][ed] = fin_cache[code].get(ed, {})
+                    fin_cache[code][ed]["fund_score"] = score
+            logger.info(f"✅ scores.parquet 已加载: {len(scores_df)} 行")
+        except Exception as e:
+            logger.warning(f"⚠️ scores.parquet 加载失败: {e}")
     index_data = load_index_data(str(DATA_DIR))
 
     # 基线 v1.4
@@ -980,6 +1087,9 @@ def main():
                     "max_drawdown": -13.71, "win_rate": 58.6, "win_loss_ratio": 2.67}
 
     modes = ["train", "valid", "test"] if args.mode == "all" else [args.mode]
+    # grid 模式等价于 test
+    if modes == ["grid"]:
+        modes = ["test"]
     all_results = {}
 
     for mode in modes:

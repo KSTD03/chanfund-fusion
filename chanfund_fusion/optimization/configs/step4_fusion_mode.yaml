@@ -1,0 +1,42 @@
+# Step 4: fusion_mode_opt.yaml
+# 技术与基本面协同模式优化 — L2级
+# 固定：止盈止损、仓位参数使用阶段一结果
+# 使用验证集评估
+
+position:
+  stop_loss:
+    mode: "trailing"
+    initial_stop_atr_mult: 2.0
+    trail_bi_low: true
+    trail_zs_zg: true
+  take_profit:
+    tp1_pct: 0.10
+    tp1_reduce: 0.30
+    tp2_pct: 0.20
+    tp2_reduce: 0.50
+    tp_trail_retrace: 0.09
+  max_positions: 5
+  single_stock_max_pct: 0.20
+  sector_max_pct: 0.50
+
+# ----- L2待测试模式 -----
+optimization:
+  modes:
+    A:                           # 二元过滤（当前）
+      fusion_mode: "binary_filter"
+      params: {}
+    B:                           # 线性仓位调节
+      fusion_mode: "linear_position"
+      params:
+        base_position_pct: 0.01
+    C:                           # 共振打分
+      fusion_mode: "resonance_scoring"
+      params:
+        tech_weight: 0.6
+        fund_weight: 0.4
+
+  method: "mode_comparison"
+  metrics:
+    - "return_drawdown_ratio"
+    - "win_rate"
+  fold: "valid"                  # 验证集评估

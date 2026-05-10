@@ -1,0 +1,29 @@
+# Step 3: position_opt.yaml
+# 仓位管理优化 — 网格搜索
+# 固定：技术止盈(Step1)、基本面阈值(Step2)
+
+# ----- 使用 Step1+2 最优参数（示例值） -----
+position:
+  take_profit:
+    tp1_pct: 0.10
+    tp1_reduce: 0.30
+    tp2_pct: 0.20
+    tp2_reduce: 0.50
+    tp_trail_retrace: 0.09
+  stop_loss:
+    mode: "fixed"
+    fixed_stop_pct: 0.08
+
+fusion:
+  buy_score_min: 60              # Step2最优值
+
+# ----- L1待优化参数（3×3=9次回测） -----
+optimization:
+  params:
+    max_positions: [3, 5, 8]                # 持仓数量
+    single_stock_max_pct: [0.15, 0.20, 0.25] # 单只仓位上限
+
+  method: "grid_search"          # 网格搜索
+  metric: "return_drawdown_ratio"
+  constraint: "max_drawdown <= v1.4_baseline"  # 最大回撤不劣于基线
+  fold: "train"

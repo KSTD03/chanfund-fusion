@@ -1,0 +1,70 @@
+# ============================================================
+# frozen_params.yaml — 冻结参数（优化期间不允许改动）
+# 缠论结构参数 + 基础风控参数 — 对所有优化步骤固定
+# ============================================================
+
+# ----- 缠论结构参数（L0级，全程冻结） -----
+tech:
+  bi_min_kbar: 5
+  bi_min_kbar_dynamic: true
+  zs_bi_num: 3
+  macd:
+    fast: 12
+    slow: 26
+    signal: 9
+  noise:
+    er_period: 20
+    er_hist_window: 500
+    er_discard_percentile: 0.20
+    er_low_percentile: 0.30
+    er_high_percentile: 0.80
+  ma:
+    short_window: 12
+    medium_window: 26
+    long_window: 250
+  trial:
+    position_pct: 0.25
+    expire_kbars: 20
+    stop_multiplier: 1.5
+    upgrade_score: 85
+    upgrade_double_r: 2.0
+
+# ----- 风控底线（全程冻结） -----
+position:
+  slippage: 0.0015
+  jump_reject_pct: 0.03
+  stop_loss:
+    mode: "trailing"
+    initial_stop_atr_mult: 2.0
+    trail_bi_low: true
+    trail_zs_zg: true
+  volume_confirmation:
+    min_ratio: 0.8
+    ma_period: 20
+
+# ----- 基本面子系统（固定配置） -----
+fund:
+  factor_groups:
+    - [roe, gross_margin, debt_ratio]
+    - [fcf_yield, pe, pb]
+    - [accrual, ocf_quality]
+  fin_mix_days: 10
+  fin_mix_ratio: 0.75
+  redflag:
+    ar_3y_growth_gap: 0.20
+    ocf_decline_pct: 0.50
+    inventory_turnover_increase: 0.50
+    cash_debt_high_ratio: 0.20
+    cash_debt_liability_ratio: 0.30
+    event_delay_days: 1
+
+# ----- 回测基础设施（固定） -----
+backtest:
+  initial_cash: 1000000
+  commission: 0.0003
+  tax: 0.001
+  min_commission: 5.0
+
+data:
+  freq: "day"
+  benchmark: "SH000300"
