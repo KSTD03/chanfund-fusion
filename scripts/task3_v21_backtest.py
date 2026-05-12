@@ -123,8 +123,17 @@ def load_scores_parquet() -> dict:
     scores_cache: dict = {}
     for _, row in df.iterrows():
         code_str = str(row["ts_code"])
-        if not (code_str.startswith("sh.") or code_str.startswith("sz.")):
-            code_str = f"sh.{code_str}" if code_str[0] == '6' else f"sz.{code_str}"
+        # 如果是 Tushare 格式 (000001.SZ, 600519.SH, 830799.BJ)，先取纯数字部分
+        if "." in code_str and len(code_str) > 8:
+            code_str = code_str.split(".")[0]
+        # 转换为 Qlib 格式
+        if not (code_str.startswith("sh.") or code_str.startswith("sz.") or code_str.startswith("bj.")):
+            if code_str[0] == '6':
+                code_str = f"sh.{code_str}"
+            elif code_str[0] in ('0', '3'):
+                code_str = f"sz.{code_str}"
+            else:
+                code_str = f"bj.{code_str}"
         end_date = row["end_date"]  # 已经是 str
         score = float(row["fund_score"])
         if score > 0:
