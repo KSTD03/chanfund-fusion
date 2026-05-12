@@ -137,3 +137,76 @@ class Signal:
     def is_invalidated_by(self, event) -> bool:
         """检查是否被新事件失效（待实现）"""
         return False
+
+
+# ============================================================
+# czsc 移植: Factor / Event 组合逻辑
+# 参考: czsc v0.9.69 objects.py
+# ============================================================
+
+@dataclass
+class Factor:
+    """因子：一组信号的逻辑组合
+
+    signals_all 必须全部满足
+    signals_any 满足任一即可（可空）
+    signals_not 都不能满足（可空）
+    """
+    name: str = ""
+    signals_all: List[str] = field(default_factory=list)
+    signals_any: List[str] = field(default_factory=list)
+    signals_not: List[str] = field(default_factory=list)
+
+    def is_match(self, signal_states: dict) -> bool:
+        """判断当前信号状态是否匹配该因子
+
+        Args:
+            signal_states: {signal_name: bool} 格式的信号状态字典
+
+        Returns:
+            bool: 是否匹配
+        """
+        if self.signals_not and any(signal_states.get(s, False) for s in self.signals_not):
+            return False
+        if self.signals_all and not all(signal_states.get(s, False) for s in self.signals_all):
+            return False
+        if self.signals_any and not any(signal_states.get(s, False) for s in self.signals_any):
+            return False
+        return True
+
+    def dump(self) -> dict:
+        return {"name": self.name, "all": self.signals_all, "any": self.signals_any, "not": self.signals_not}
+
+
+@dataclass
+class Event:
+    """事件：多个因子的组合（OR 关系），任一因子满足即触发
+
+    参考 czsc 的 Event 设计，简化版
+    """
+    name: str
+    operate: str                       # "buy" / "sell"
+    factors: List[Factor] = field(default_factory=list)
+    signals_all: List[str] = field(default_factory=list)
+    signals_any: List[str] = field(default_factory=list)
+    signals_not: List[str] = field(default_factory=list)
+
+    def is_match(self, signal_states: dict) -> tuple:
+        """判断事件是否满足
+
+        Returns:
+            (matched: bool, factor_name: Optional[str])
+        """
+        # 全局约束
+        if self.signals_not and any(signal_states.get(s, False) for s in self.signals_not):
+            return False, None
+        if self.signals_all and not all(signal_states.get(s, False) for s in self.signals_all):
+            return False, None
+        if self.signals_any and not any(signal_states.get(s, False) for s in self.signals_any):
+            return False, None
+
+        # 因子 OR 组合
+        for factor in self.factors:
+            if factor.is_match(signal_states):
+                return True, factor.name
+        return False, None

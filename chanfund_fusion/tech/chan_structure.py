@@ -52,8 +52,9 @@ class ChanStructureState:
         事件5 — 信号：检查背驰或三类买卖点
     """
 
-    def __init__(self, symbol: str):
+    def __init__(self, symbol: str, bi_min_kbar: int = 5):
         self.symbol = symbol
+        self.bi_min_kbar = bi_min_kbar
         # 当前笔（正在构建中）
         self.current_bi: Optional[Bi] = None
         # 待确认的潜在分型
@@ -70,8 +71,7 @@ class ChanStructureState:
         self.kbar_count: int = 0
         # 最近一次事件的K线信息
         self.last_kbar: Optional[dict] = None
-        # 配置参数
-        self.bi_min_kbar: int = 5
+        # 配置参数（动态长度保护）
         self.bi_min_kbar_dynamic: bool = True
 
     # ------------------------------------------------------------------

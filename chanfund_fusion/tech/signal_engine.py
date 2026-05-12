@@ -32,6 +32,7 @@ class TechSignalEngine:
 
     def __init__(self, config: dict):
         self.config = config
+        self._min_bi_len = config.get("tech", {}).get("bi_min_kbar", 5)
         # {symbol: ChanStructureState}
         self.chan_cache: Dict[str, ChanStructureState] = {}
         # {symbol: [Signal]}
@@ -63,7 +64,7 @@ class TechSignalEngine:
             emit_signals: 是否生成信号（预热=False）
         """
         # 获取或创建状态
-        state = self.chan_cache.setdefault(symbol, ChanStructureState(symbol))
+        state = self.chan_cache.setdefault(symbol, ChanStructureState(symbol, bi_min_kbar=self._min_bi_len))
 
         # 处理K线，获取事件
         events = state.process_kbar(kbar, emit_signals=emit_signals)
@@ -238,7 +239,7 @@ class TechSignalEngine:
 
         回放历史K线建立缠论结构，但不生成交易信号。
         """
-        state = self.chan_cache.setdefault(symbol, ChanStructureState(symbol))
+        state = self.chan_cache.setdefault(symbol, ChanStructureState(symbol, bi_min_kbar=self._min_bi_len))
         for kbar in history_kbars:
             state.process_kbar(kbar, emit_signals=False)
         logger.debug(f"[{symbol}] Warm-up complete: {len(state.confirmed_bis)} bis confirmed")
