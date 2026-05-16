@@ -1,4 +1,19 @@
-# === 生成的数据文件 ===
+# ============================================================
+# NEVER UPLOAD - 绝对不能上传
+# ============================================================
+
+# === 数据文件（可重新生成） ===
+*.parquet
+*.h5
+*.hdf5
+*.feather
+*.xlsx
+
+# CSV文件：允许手工维护的小配置文件（<100KB放根目录）
+# 其他CSV一律忽略
+*.csv
+
+# === 数据目录 ===
 data/
 output/
 backtest_results/
@@ -13,6 +28,14 @@ quant/
 # === 日志 ===
 *.log
 *.out
+
+# === 密钥和凭证 ===
+.env
+*.key
+*.pem
+config/secrets.*
+email_config.json
+secret_config.json
 
 # === Python 缓存 ===
 __pycache__/
