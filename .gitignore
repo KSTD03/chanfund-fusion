@@ -1,13 +1,51 @@
+# === 生成的数据文件 ===
+data/
+output/
+backtest_results/
+tushare_download/
+optimization/
+financial_data/
+qlib_DATA_backup/
+qlib_source_backup/
+quant/
+.backtest_done
+
+# === 日志 ===
+*.log
+*.out
+
+# === Python 缓存 ===
 __pycache__/
 *.pyc
-*.parquet
-*.pkl
-*.so
-.cache/
-cache/
-financial_data/
-.openclaw/
-node_modules/
-.env
-*.db
+*.pyo
+.pytest_cache/
 
+# === IDE & 系统文件 ===
+.idea/
+.vscode/
+.DS_Store
+*~
+
+# === 临时文件 ===
+.email_config.json
+*.bak
+.gitignore
+
+# === 工具/技能目录 ===
+skills/
+jiujiao_agent/
+.clawhub/
+
+# === OpenClaw 系统文件 ===
+HEARTBEAT.md
+.IDENTITY.md
+USER.md
+SOUL.md
+TOOLS.md
+AGENTS.md
+.memory_embeddings/
+
+# === 其他 ===
+email_config.json
+scripts_archive/
+ma_reform_study/
